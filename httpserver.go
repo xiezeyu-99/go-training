@@ -12,27 +12,28 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var stop chan struct{}
-
 func main() {
-	group, _ := errgroup.WithContext(context.Background())
+	group, ctx := errgroup.WithContext(context.Background())
 
-	group.Go(httpServer)
-	group.Go(signalHandle)
+	group.Go(func() error {
+		return signalHandle(ctx)
+	})
+	group.Go(func() error {
+		return httpServer(ctx)
+	})
 
 	if err := group.Wait(); err != nil {
-		close(stop)
 		fmt.Println("shutdown:", err)
 	}
 }
 
 //信号处理
-func signalHandle() error {
+func signalHandle(ctx context.Context) error {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT)
 
 	go func() {
-		<-stop
+		<-ctx.Done()
 		close(sigs)
 	}()
 	if sig := <-sigs; sig != nil {
@@ -44,7 +45,7 @@ func signalHandle() error {
 }
 
 //http server
-func httpServer() error {
+func httpServer(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Hello World")
@@ -54,7 +55,7 @@ func httpServer() error {
 		Handler: mux,
 	}
 	go func() {
-		<-stop
+		<-ctx.Done()
 		_ = server.Shutdown(context.Background())
 	}()
 	return server.ListenAndServe()
