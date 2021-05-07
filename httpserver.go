@@ -32,14 +32,11 @@ func signalHandle(ctx context.Context) error {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT)
 
-	go func() {
-		<-ctx.Done()
-		close(sigs)
-	}()
-	if sig := <-sigs; sig != nil {
-		return errors.New(fmt.Sprint("signel:", sig))
-	} else {
-		return nil
+	select {
+	case <-ctx.Done():
+	    return ctx.Err()
+	case sig := <-sigs:
+	    return errors.Errorf("get os signal: %v", sig)
 	}
 
 }
@@ -56,7 +53,9 @@ func httpServer(ctx context.Context) error {
 	}
 	go func() {
 		<-ctx.Done()
-		_ = server.Shutdown(context.Background())
+		timeoutCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = server.Shutdown(timeoutCtx)
 	}()
 	return server.ListenAndServe()
 }
